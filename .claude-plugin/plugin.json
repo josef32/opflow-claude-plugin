@@ -1,0 +1,5 @@
+{
+    "name": "opflow",
+    "version": "1.0.0",
+    "description": "Opflow orchestrator workflows for Claude Code: handover, issue, plan, and documentation skills, plus the orchestrator MCP server registration."
+}
