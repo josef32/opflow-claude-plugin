@@ -1,0 +1,12 @@
+{
+    "name": "opflow",
+    "owner": { "name": "Opflow" },
+    "plugins": [
+        {
+            "name": "opflow",
+            "source": "./plugin",
+            "description": "Opflow orchestrator workflows for Claude Code: handover, issue, plan, and documentation skills with matching slash commands. Pair with the manual `claude mcp add` command from your project's settings page to talk to the orchestrator.",
+            "version": "1.0.0"
+        }
+    ]
+}

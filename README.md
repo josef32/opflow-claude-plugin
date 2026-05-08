@@ -16,10 +16,14 @@ The plugin ships **no MCP registration** — Claude Code's marketplace schema do
 ## Layout
 
 ```
-.claude-plugin/plugin.json   plugin manifest (name, version)
-skills/<name>/SKILL.md       skill definitions (auto-trigger via description)
-commands/<name>.md           explicit slash commands (/handover, /issue, ...)
+.claude-plugin/marketplace.json    marketplace manifest — lists plugins
+plugin/                            single plugin
+├── .claude-plugin/plugin.json     plugin manifest (name, version)
+├── skills/<name>/SKILL.md         skill definitions (auto-trigger via description)
+└── commands/<name>.md             explicit slash commands (/handover, /issue, ...)
 ```
+
+The `owner/repo`-style install (`/plugin marketplace add josef32/opflow-claude-plugin`) requires `.claude-plugin/marketplace.json` at the repo root; the marketplace's `plugins[0].source` then points at the plugin's directory (`./plugin`).
 
 ## Why a separate package
 
