@@ -1,123 +1,83 @@
 ---
 name: plan
-description: Structured workflow for creating and updating project plans via MCP. Use after grill-me session, when user says "create a plan", "plan this feature", or invokes /plan.
+description: Structured workflow for creating and updating sprint-style plans via MCP. Plans contain attached requirements + issues; activating a plan locks its scope. Use after grill-me session, when user says "create a plan", "plan this feature", or invokes /plan.
 ---
 
-Structured workflow for creating and updating project plans via MCP.
+Part of the opflow-coder workflow.
+
+Structured workflow for creating and updating sprint-style plans via MCP.
+
+A plan in this orchestrator is essentially a **sprint**: it has an optional timebox (`startDate`, `endDate` epoch ms), a set of attached requirements + issues, and a status that flows `draft → active → completed | cancelled`. Activating a plan **locks its scope** — attach/detach mutations on contained items require an explicit `override: true` from then on, and each override appends to `plan.scopeChanges[]`.
 
 ## MCP Tools
 
-- `plan-create` — Create/update plan. Params: name, status, affectedPackages, milestones, dependencies, notes, **issueIds** (optional — issues to attach in one shot; each gets `planid` set + status flipped to `scoped`)
-- `plan-update` — Update plan fields. Params: name, status, milestones, notes, dependencies. **When status flips to `completed`, the server auto-cascades attached `scoped` issues to `solved`** and returns `cascadedIssues` in the result.
-- `plan-active` — Get active plans. Params: package (optional)
-- `plan-list` — List all plans. Params: status, package, nameContains
+- `plan-create` — Create/update plan. Params: `name`, `status`, `affectedPackages`, `startDate?`, `endDate?`, `notes`, `issueIds?` (attach in one shot, each gets `planid` + `status='scoped'`), `requirementIds?` (same, requirements must be in `created` or `scoped` state).
+- `plan-update` — Update plan fields. Params: `name`, `status`, `startDate`, `endDate`, `notes`, `affectedPackages`. **No automatic cascade on plan completion** — mark each requirement/issue `solved` or `rejected` explicitly via `requirement-attach`/`issue-attach` or the `setStatus` endpoints.
+- `plan-active` — Get active plans + per-status counts for attached requirements/issues. Params: `package?`.
+- `plan-list` — List all plans. Params: `status?`, `package?`, `nameContains?`.
 
 ## Workflow: Create Plan
 
-When starting a new feature or project (typically after grill-me):
+When starting a new feature or sprint (typically after grill-me):
 
 1. Ask user for plan details:
-   - Plan name (e.g., "Documentation MCP")
-   - Affected packages (e.g., ["opflow-orchestrator"])
-   - Milestones:
-     - Name for each (e.g., "Phase 1: Infrastructure")
-     - Description for each (what this milestone covers)
-   - Dependencies (other plans this depends on, if any)
-   - Initial status (draft or active)
+   - Plan name (e.g., "Sprint 12: search overhaul")
+   - Affected packages
+   - Optional sprint window (`startDate`, `endDate` as epoch ms)
+   - Initial status (`draft` or `active`)
+   - Optional `requirementIds` / `issueIds` to attach in one shot
 
 2. Generate notes summary in markdown:
    ```markdown
    ## Summary
-   <brief description of the plan>
+   <brief description>
 
-   ## Problem
-   <what problem this solves>
+   ## Goals
+   <what the sprint is trying to achieve>
 
-   ## Solution
-   <high-level solution>
-
-   ## Phases
-   <description of each phase>
+   ## Out of scope
+   <explicit non-goals so the locked scope is unambiguous>
    ```
 
-3. Call `plan-create`:
-   ```json
-   {
-     "name": "<plan name>",
-     "status": "<draft|active>",
-     "affectedPackages": ["<packages>"],
-     "milestones": [
-       {
-         "name": "<milestone name>",
-         "status": "pending",
-         "description": "<description>"
-       }
-     ],
-     "dependencies": ["<other plan names>"],
-     "notes": "<generated markdown>"
-   }
-   ```
+3. Call `plan-create`. If you're activating immediately and attaching items, do it in one call.
 
-4. Confirm to user: "Created plan '<name>' with <N> milestones"
+4. Confirm to user: "Created plan '<name>' (status: <status>) with N requirements + M issues attached"
 
-## Workflow: Update Milestone
+## Workflow: Activating a plan (locking scope)
 
-When the AI completes work that matches a plan milestone:
-
-1. AI recognizes the work aligns with a milestone in an active plan
-2. AI suggests: "This work completes milestone '<name>' in plan '<plan>'. Should I mark it as completed?"
-3. User confirms
-4. Call `plan-update`:
-   ```json
-   {
-     "name": "<plan name>",
-     "milestones": [
-       {
-         "name": "<milestone name>",
-         "status": "completed"
-       }
-     ]
-   }
-   ```
-5. Confirm to user: "Marked milestone '<name>' as completed"
+1. User confirms the plan is ready to start
+2. Call `plan-update({ name, status: 'active' })`
+3. From this point, attach/detach against this plan needs `override: true`. Status changes on contained items remain free.
 
 ## Workflow: Update Plan Status
 
-When the user asks to change a plan's status:
-
-1. Ask user for the new status (draft/active/completed/cancelled)
-2. Call `plan-update`:
-   ```json
-   {
-     "name": "<plan name>",
-     "status": "<new status>"
-   }
-   ```
-3. Confirm to user: "Updated plan '<name>' status to '<status>'"
+1. Ask user for the new status (`draft`/`active`/`completed`/`cancelled`)
+2. Call `plan-update({ name, status })`
+3. Confirm: "Updated plan '<name>' status to '<status>'"
 
 ## Workflow: Read Active Plans
 
 When starting a session (triggered by AGENTS.md, not this skill):
 
 1. Call `plan-active({ package: "<current-package>" })`
-2. Review active plans to understand current priorities
+2. Review active plans + their requirement/issue status counts to understand current priorities
 3. Use this context to orient yourself before asking user what to work on
 
-## Workflow: Plan from issues
+## Workflow: Plan from issues / requirements
 
-When the user asks you to "scope these issues" or you're triaging in the `issue` skill:
+When the user asks you to "scope these issues" / "plan these requirements", or you're triaging in the `issue` skill:
 
-1. Call `issue-list` (or `issue-get` for details) to understand the cluster.
-2. Group related issues that share root cause / fix.
-3. Call `plan-create` with `issueIds: [...]` — this creates the plan and attaches the issues atomically (each issue's status flips to `scoped`).
-4. When the work lands and you mark the plan `completed` via `plan-update`, attached issues auto-cascade to `solved`. The result includes `cascadedIssues: [ids]` — relay this to the user.
+1. Call `issue-list` / `requirement-list` (or `*-get` for details) to understand the cluster.
+2. Group related items that share root cause / theme.
+3. Call `plan-create` with `issueIds` and/or `requirementIds` — this creates the plan and attaches the items atomically.
+4. When work lands, flip individual item status with `setStatus` or via the UI; **no auto-cascade on plan completion** (intentional — sprints can close with carry-over).
 
 See the `issue` skill for full triage workflow.
 
 ## Rules
 
-- Always ask user for plan details — don't auto-generate from grill-me output
-- Milestone names should be descriptive and numbered (e.g., "Phase 1: Infrastructure")
-- Notes should be comprehensive and contain all provided / created context (exploration summaries, identified code changes etc...)
-- Suggest milestone updates when work aligns — don't wait for user to ask
-- Never change plan status without user confirmation
+- Always ask user for plan details — don't auto-generate from grill-me output.
+- `notes` should contain all provided context (exploration summaries, identified code changes, etc.) so future sessions can pick up the plan without re-asking.
+- Suggest status updates when work aligns — don't silently flip status.
+- Never change plan status without user confirmation.
+- When attaching to a plan that's already `active`, prompt the user to confirm the override before passing `override: true`.

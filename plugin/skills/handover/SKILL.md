@@ -3,6 +3,8 @@ name: handover
 description: Structured workflow for creating handover records after commits via MCP. Use when AI commits code and user confirms, or user says "create a handover", or invokes /handover.
 ---
 
+Part of the opflow-coder workflow.
+
 Structured workflow for creating handover records after commits via MCP.
 
 ## MCP Tools

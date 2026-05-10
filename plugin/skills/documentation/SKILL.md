@@ -3,6 +3,8 @@ name: documentation
 description: Structured workflows for creating and reading documentation via MCP tools. Use when user says "document this endpoint", "create docs for", "read the docs for", or invokes /docs or /documentation.
 ---
 
+Part of the opflow-coder workflow.
+
 Structured workflows for creating and reading documentation via MCP tools.
 
 ## MCP Tools
