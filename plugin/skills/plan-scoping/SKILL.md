@@ -15,7 +15,7 @@ This skill is the bridge between the orchestrator's chat-driven scoping (which p
 
 ## MCP tools
 
-- `plan-get-for-scoping(planid)` — full payload for scoping: plan + attached requirements (title + description) + attached issues + existing summary/milestones/clientBrief + clientComments. Requires status `ready` or `revision_required`.
+- `plan-get-for-scoping(planid)` — full payload for scoping: plan + attached requirements (title + description) + attached issues + existing summary/milestones/clientBrief + clientComments + expanded `documents` (full content of any attached documentRefs) + `images` (presigned URLs, 1h TTL). Requires status `ready` or `revision_required`.
 - `plan-set-scoped(planid, summary, milestones[], clientBrief, language)` — atomic write of all four. Server flips status to `scoped`. Idempotent on re-run.
 - `plan-list({ status: "ready" })` / `plan-list({ status: "revision_required" })` — when the user didn't pass an id.
 
@@ -34,6 +34,8 @@ Call `plan-get-for-scoping(planid)`. Three relevant cases:
 - **status='ready', no existingSummary** — fresh scoping. Ask the user which language the client brief should be in (default to project default if known; otherwise ask). Examples: `en`, `nl`, `de`.
 - **status='ready' with existingSummary** — only happens if reopen_scope was called and the user wants you to re-scope. Treat as fresh scoping; the existing fields are stale and will be overwritten.
 - **status='revision_required'** — process feedback mode. Read `clientComments` carefully. Existing summary/milestones/clientBrief are the baseline; rewrite them addressing each comment. Reuse the existing `language`.
+
+**Required reading.** If the payload contains `documents[]`, read every entry in full before drafting — they're the user's curated context and often carry constraints not in the requirements/issues. Same goes for `images[]`: fetch each presigned URL and look at the image. The presigned URLs expire in 1 hour, so if scoping takes longer, just re-call `plan-get-for-scoping` to refresh.
 
 ### 3. Draft
 

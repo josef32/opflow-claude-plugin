@@ -47,6 +47,7 @@ A few rules of thumb the routing relies on:
 
 When `plan-active` returns a plan:
 
+- **Load full execution context before writing code.** Call `plan-get-for-execution(planid)` for the active plan. It returns the plan + summary + milestones + reqs + issues + expanded `documents` (full content of any attached documentRefs) + `images` (presigned URLs, 1h TTL). Read every attached document fully — the user curated them as required reading and they often carry constraints not in the requirements/issues. Fetch each image URL and look at it.
 - **Don't introduce work outside its scope.** If the user asks for something off-plan, surface it: "this is outside the active plan's scope — capture as a requirement, or update the plan?". Let them choose.
 - **Attach issues you uncover via `issue-attach`** so they're traceable to the plan.
 - **Update the plan when you decide to expand or trim scope** — the audit trail matters more than the final state.
