@@ -1,30 +1,51 @@
 ---
 name: plan
-description: Structured workflow for creating and updating sprint-style plans via MCP. Plans contain attached requirements + issues; activating a plan locks its scope. Use after grill-me session, when user says "create a plan", "plan this feature", or invokes /plan.
+description: Structured workflow for creating and updating sprint-style plans via MCP. Plans contain attached requirements + issues; the lifecycle is draft → ready → scoped → active → completed (with revision_required as a feedback loop). Use after grill-me session, when user says "create a plan", "plan this feature", or invokes /plan. For AI-scoping a ready plan, use /scope-plan instead.
 ---
 
 Part of the opflow-coder workflow.
 
-Structured workflow for creating and updating sprint-style plans via MCP.
+A plan in this orchestrator is a **sprint with a lifecycle**:
 
-A plan in this orchestrator is essentially a **sprint**: it has an optional timebox (`startDate`, `endDate` epoch ms), a set of attached requirements + issues, and a status that flows `draft → active → completed | cancelled`. Activating a plan **locks its scope** — attach/detach mutations on contained items require an explicit `override: true` from then on, and each override appends to `plan.scopeChanges[]`.
+```
+draft ──mark_ready──▶ ready ──plan-set-scoped──▶ scoped ──plan-start──▶ active ──plan-complete──▶ completed
+                                                  │
+                                            client comment
+                                                  ▼
+                                         revision_required
+                                            (→ rescope via /scope-plan,
+                                             or reopen scope back to draft
+                                             via the team UI)
+```
+
+- `draft` — user is iterating on scope in the orchestrator chat. Attach/detach is free.
+- `ready` — user has signalled scope is complete. Scope is locked from this point (attach/detach requires `override: true`). Awaiting AI scoping via `/scope-plan`.
+- `scoped` — Claude Code has produced summary + milestones + client brief. Public share URL is live.
+- `revision_required` — client posted a comment on the public brief page. Resolve via `/scope-plan` (process feedback in place) or reopen scope from the team UI (drops back to `draft`).
+- `active` — work in progress.
+- `completed` — done.
+- `cancelled` — abandoned (from any state).
 
 ## MCP Tools
 
-- `plan-create` — Create/update plan. Params: `name`, `status`, `affectedPackages`, `startDate?`, `endDate?`, `notes`, `issueIds?` (attach in one shot, each gets `planid` + `status='scoped'`), `requirementIds?` (same, requirements must be in `created` or `scoped` state).
-- `plan-update` — Update plan fields. Params: `name`, `status`, `startDate`, `endDate`, `notes`, `affectedPackages`. **No automatic cascade on plan completion** — mark each requirement/issue `solved` or `rejected` explicitly via `requirement-attach`/`issue-attach` or the `setStatus` endpoints.
-- `plan-active` — Get active plans + per-status counts for attached requirements/issues. Params: `package?`.
-- `plan-list` — List all plans. Params: `status?`, `package?`, `nameContains?`.
+- `plan-create` — Create a plan in `draft` (default) or `ready`. AI-generated fields (summary/milestones/clientBrief) cannot be set here — use `plan-set-scoped`.
+- `plan-update` — Update plan metadata (dates, notes, packages, name). **No status field** — use the dedicated transition tools below.
+- `plan-set-scoped` — Atomic write of summary/milestones/clientBrief/language. Flips status to `scoped`. Use via `/scope-plan` skill.
+- `plan-start` — `scoped → active`. Blocked from `ready`/`revision_required` (must scope or resolve feedback first).
+- `plan-complete` — `active → completed`.
+- `plan-cancel` — any → `cancelled`.
+- `plan-active` — Returns plans in `ready`, `scoped`, `revision_required`, or `active`. Includes attached requirement/issue counts, plus summary + milestones + (for revision_required) the new client comments.
+- `plan-list` — List by status, package, or name substring.
+- `plan-get-for-scoping` — Full payload for scoping. See the `plan-scoping` skill.
 
 ## Workflow: Create Plan
 
-When starting a new feature or sprint (typically after grill-me):
+After grill-me, when the user is ready to formalise a sprint:
 
 1. Ask user for plan details:
-   - Plan name (e.g., "Sprint 12: search overhaul")
+   - Plan name
    - Affected packages
    - Optional sprint window (`startDate`, `endDate` as epoch ms)
-   - Initial status (`draft` or `active`)
    - Optional `requirementIds` / `issueIds` to attach in one shot
 
 2. Generate notes summary in markdown:
@@ -36,48 +57,48 @@ When starting a new feature or sprint (typically after grill-me):
    <what the sprint is trying to achieve>
 
    ## Out of scope
-   <explicit non-goals so the locked scope is unambiguous>
+   <explicit non-goals>
    ```
 
-3. Call `plan-create`. If you're activating immediately and attaching items, do it in one call.
+3. Call `plan-create({ name, affectedPackages, notes, ... })`. Status defaults to `draft` so the user can keep iterating in the orchestrator chat.
 
-4. Confirm to user: "Created plan '<name>' (status: <status>) with N requirements + M issues attached"
+4. Confirm: "Created plan '<name>' (draft) with N requirements + M issues attached. Open the orchestrator chat to refine scope, or run /scope-plan once it's ready."
 
-## Workflow: Activating a plan (locking scope)
+## Workflow: Transition a plan
 
-1. User confirms the plan is ready to start
-2. Call `plan-update({ name, status: 'active' })`
-3. From this point, attach/detach against this plan needs `override: true`. Status changes on contained items remain free.
+Status flips happen via dedicated tools, not `plan-update`:
 
-## Workflow: Update Plan Status
+- `plan-start` when work begins (`scoped → active`).
+- `plan-complete` when all attached items are landed (`active → completed`).
+- `plan-cancel` to abandon a plan from any state.
 
-1. Ask user for the new status (`draft`/`active`/`completed`/`cancelled`)
-2. Call `plan-update({ name, status })`
-3. Confirm: "Updated plan '<name>' status to '<status>'"
+Never set `status` via `plan-update` — that field is no longer accepted.
 
-## Workflow: Read Active Plans
+To scope a ready plan (or process feedback on a revision-required one), use `/scope-plan <id>` — that runs the `plan-scoping` skill.
 
-When starting a session (triggered by AGENTS.md, not this skill):
+## Workflow: Read active plans
 
-1. Call `plan-active({ package: "<current-package>" })`
-2. Review active plans + their requirement/issue status counts to understand current priorities
-3. Use this context to orient yourself before asking user what to work on
+When starting a session (triggered by AGENTS.md):
+
+1. Call `plan-active({ package: "<current-package>" })` — returns ready / scoped / revision_required / active.
+2. If a plan is in `ready`, offer to run `/scope-plan` on it.
+3. If a plan is in `revision_required`, surface the new client comments and offer to process them.
+4. If a plan is in `active`, use it as the working context.
 
 ## Workflow: Plan from issues / requirements
 
-When the user asks you to "scope these issues" / "plan these requirements", or you're triaging in the `issue` skill:
+When the user asks you to "scope these issues" / "plan these requirements":
 
-1. Call `issue-list` / `requirement-list` (or `*-get` for details) to understand the cluster.
-2. Group related items that share root cause / theme.
-3. Call `plan-create` with `issueIds` and/or `requirementIds` — this creates the plan and attaches the items atomically.
-4. When work lands, flip individual item status with `setStatus` or via the UI; **no auto-cascade on plan completion** (intentional — sprints can close with carry-over).
+1. Call `issue-list` / `requirement-list` to understand the cluster.
+2. Group related items.
+3. Call `plan-create` with `issueIds` and/or `requirementIds` — the plan starts in `draft` so the user can refine it in the orchestrator chat.
+4. Don't try to mark ready / scope / start from this skill — those transitions are user-driven.
 
 See the `issue` skill for full triage workflow.
 
 ## Rules
 
 - Always ask user for plan details — don't auto-generate from grill-me output.
-- `notes` should contain all provided context (exploration summaries, identified code changes, etc.) so future sessions can pick up the plan without re-asking.
-- Suggest status updates when work aligns — don't silently flip status.
-- Never change plan status without user confirmation.
-- When attaching to a plan that's already `active`, prompt the user to confirm the override before passing `override: true`.
+- `notes` should contain all provided context so future sessions can pick up the plan without re-asking.
+- Never change plan status via `plan-update` — it doesn't accept `status` anymore. Use the dedicated transition tools.
+- When attaching to a plan that's no longer `draft`, prompt the user to confirm the override before passing `override: true`. Each override is audit-logged to `plan.scopeChanges[]`.
