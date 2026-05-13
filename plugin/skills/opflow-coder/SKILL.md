@@ -9,12 +9,12 @@ This is a meta-skill. It delegates. The actual procedures for handovers, plans, 
 
 ## Session-start ritual
 
-The moment you enter a session in this project, before doing anything else, fire these four MCP calls in parallel and read the results:
+The moment you enter a session in this project, before doing anything else, fire these four `opflow` CLI calls in parallel and read the results:
 
-1. **`handover-latest`** — what was the last session about? What's the current commit? Are there open follow-ups?
-2. **`plan-active`** — is there an active sprint? If yes, treat its scope as locked: new work goes through the plan, not around it.
-3. **`project-get`** — read project metadata. Crucially: `monorepo` (true → use package selectors; false → never pass a `package` field, the server will overwrite it to `'root'` anyway) and `technologies` (the stack you're working in).
-4. **`docs-get` with `path: 'bootstrap.md'`** — project conventions. Indent, naming, footguns. Read this *before* writing code, not after.
+1. **`opflow handover latest --json`** — what was the last session about? What's the current commit? Are there open follow-ups?
+2. **`opflow plan active --json`** — is there an active sprint? If yes, treat its scope as locked: new work goes through the plan, not around it.
+3. **`opflow project get --json`** — read project metadata. Crucially: `monorepo` (true → use package selectors; false → never pass a `package` field, the server will overwrite it to `'root'` anyway) and `technologies` (the stack you're working in).
+4. **`opflow docs get --path bootstrap.md --json`** — project conventions. Indent, naming, footguns. Read this *before* writing code, not after.
 
 If any of these return empty / placeholder content, that's a signal:
 - Empty `bootstrap.md` (still has the 5-section template) → suggest `/bootstrap` to the user.
@@ -45,23 +45,23 @@ A few rules of thumb the routing relies on:
 
 ## Working inside an active plan
 
-When `plan-active` returns a plan:
+When `opflow plan active` returns a plan:
 
-- **Load full execution context before writing code.** Call `plan-get-for-execution(planid)` for the active plan. It returns the plan + summary + milestones + reqs + issues + expanded `documents` (full content of any attached documentRefs) + `images` (presigned URLs, 1h TTL). Read every attached document fully — the user curated them as required reading and they often carry constraints not in the requirements/issues. Fetch each image URL and look at it.
+- **Load full execution context before writing code.** Run `opflow plan get-for-execution <id> --json` for the active plan. It returns the plan + summary + milestones + reqs + issues + expanded `documents` (full content of any attached documentRefs) + `images` (presigned URLs, 1h TTL). Read every attached document fully — the user curated them as required reading and they often carry constraints not in the requirements/issues. Fetch each image URL and look at it.
 - **Don't introduce work outside its scope.** If the user asks for something off-plan, surface it: "this is outside the active plan's scope — capture as a requirement, or update the plan?". Let them choose.
-- **Attach issues you uncover via `issue-attach`** so they're traceable to the plan.
+- **Attach issues you uncover via `opflow issue attach`** so they're traceable to the plan.
 - **Update the plan when you decide to expand or trim scope** — the audit trail matters more than the final state.
 
 ## Coding hygiene
 
-- Use `search` / `context` / `files` (the code-index MCP tools) before grep — they return signatures + JSDoc and respect monorepo packaging.
+- Use `opflow search` / `opflow context` / `opflow files` before grep — they return signatures + JSDoc and respect monorepo packaging.
 - Re-run `/op-indexer` after non-trivial changes so the next agent sees them.
 - Read the project's `bootstrap.md` for indent / naming / framework quirks before writing code in an unfamiliar package.
 
 ## Anti-patterns
 
-- **Skipping the session-start ritual** because "the user just asked a quick question". Quick questions become hour-long sessions; the ritual costs four parallel MCP calls.
+- **Skipping the session-start ritual** because "the user just asked a quick question". Quick questions become hour-long sessions; the ritual costs four parallel CLI calls.
 - **Dumping handover/plan/bootstrap content at the user.** Read it; use it. Surface only what's relevant to the current ask.
 - **Re-implementing handover/plan/issue/docs/bootstrap procedures inline.** Each lives in its own skill — invoke it.
 - **Writing to `bootstrap.md` ad-hoc.** Use `/bootstrap` (it surveys the codebase first) or `/documentation` for general docs.
-- **Sending `package` fields when the project is non-monorepo.** Harmless (server overwrites to `'root'`) but noisy. Read `project-get`'s `monorepo` once and skip it.
+- **Sending `package` fields when the project is non-monorepo.** Harmless (server overwrites to `'root'`) but noisy. Read `opflow project get`'s `monorepo` once and skip it.

@@ -11,7 +11,7 @@ Published as a public Claude Code marketplace at `josef32/opflow-claude-plugin`.
 /plugin install opflow@opflow
 ```
 
-The plugin ships **no MCP registration** — Claude Code's marketplace schema does not support HTTPS-served plugin trees, so we can't bake a per-user JWT into a plugin's `.mcp.json` over plain HTTP. Users register the orchestrator as an MCP server in a separate `claude mcp add` step, with their token sourced from their project Settings page.
+The plugin ships **skills + slash commands only**. Workflow tools (handover, plan, issue, docs, search, etc.) are invoked via the standalone `opflow` CLI, installed separately with `curl -fsSL <orchestrator>/install.sh | sh` and authenticated with `opflow auth login --project <slug> --token <jwt>` — the per-user JWT is surfaced in the orchestrator's project Settings page.
 
 ## Layout
 

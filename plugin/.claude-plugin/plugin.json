@@ -1,5 +1,5 @@
 {
     "name": "opflow",
-    "version": "1.2.0",
-    "description": "Opflow orchestrator workflows for Claude Code: handover, issue, plan, plan-scoping, and documentation skills, plus the orchestrator MCP server registration."
+    "version": "1.3.0",
+    "description": "Opflow orchestrator workflows for Claude Code: handover, issue, plan, plan-scoping, and documentation skills. Workflow tools invoke the standalone `opflow` CLI (installed separately from the orchestrator's install.sh)."
 }

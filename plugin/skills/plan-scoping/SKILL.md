@@ -13,39 +13,41 @@ This skill is the bridge between the orchestrator's chat-driven scoping (which p
 
 …and flips the plan to `scoped`. On first scope, a `shareToken` is minted so the brief is reachable at `/p/<orgSlug>/<token>` for the client to read and comment on.
 
-## MCP tools
+## CLI commands
 
-- `plan-get-for-scoping(planid)` — full payload for scoping: plan + attached requirements (title + description) + attached issues + existing summary/milestones/clientBrief + clientComments + expanded `documents` (full content of any attached documentRefs) + `images` (presigned URLs, 1h TTL). Requires status `ready` or `revision_required`.
-- `plan-set-scoped(planid, summary, milestones[], clientBrief, language)` — atomic write of all four. Server flips status to `scoped`. Idempotent on re-run.
-- `plan-list({ status: "ready" })` / `plan-list({ status: "revision_required" })` — when the user didn't pass an id.
+- `opflow plan get-for-scoping <id> --json` — full payload for scoping: plan + attached requirements (title + description) + attached issues + existing summary/milestones/clientBrief + clientComments + expanded `documents` (full content of any attached documentRefs) + `images` (presigned URLs, 1h TTL). Requires status `ready` or `revision_required`.
+- `opflow plan set-scoped <id> --summary @summary.md --milestones @milestones.json --clientbrief @brief.md --language <code>` — atomic write of all four. Server flips status to `scoped`. Idempotent on re-run.
+- `opflow plan list --status ready` / `--status revision_required` — when the user didn't pass an id.
 
 ## Workflow
 
 ### 1. Resolve the plan id
 
 If invoked as `/scope-plan <id>`, use that. Otherwise:
-- If the user mentioned a plan by name, call `plan-list({ nameContains: "<term>" })`.
+- If the user mentioned a plan by name, run `opflow plan list --json` and grep / filter locally.
 - Otherwise list `ready` + `revision_required` plans and ask which.
 
 ### 2. Load context
 
-Call `plan-get-for-scoping(planid)`. Three relevant cases:
+Run `opflow plan get-for-scoping <id> --json`. Three relevant cases:
 
 - **status='ready', no existingSummary** — fresh scoping. Ask the user which language the client brief should be in (default to project default if known; otherwise ask). Examples: `en`, `nl`, `de`.
 - **status='ready' with existingSummary** — only happens if reopen_scope was called and the user wants you to re-scope. Treat as fresh scoping; the existing fields are stale and will be overwritten.
 - **status='revision_required'** — process feedback mode. Read `clientComments` carefully. Existing summary/milestones/clientBrief are the baseline; rewrite them addressing each comment. Reuse the existing `language`.
 
-**Required reading.** If the payload contains `documents[]`, read every entry in full before drafting — they're the user's curated context and often carry constraints not in the requirements/issues. Same goes for `images[]`: fetch each presigned URL and look at the image. The presigned URLs expire in 1 hour, so if scoping takes longer, just re-call `plan-get-for-scoping` to refresh.
+**Required reading.** If the payload contains `documents[]`, read every entry in full before drafting — they're the user's curated context and often carry constraints not in the requirements/issues. Same goes for `images[]`: fetch each presigned URL and look at the image. The presigned URLs expire in 1 hour, so if scoping takes longer, just re-run `opflow plan get-for-scoping <id> --json` to refresh.
 
 ### 3. Draft
 
-#### Summary (internal)
+Write each artefact to a file before submitting — that keeps shell quoting trivial and lets you re-read your own draft before transmitting.
+
+#### Summary (internal) — write to `summary.md`
 1-3 short paragraphs. Goal: a dev opening the plan months later understands what it's about. Reference attached requirement / issue ids where helpful. Skip motherhood (do not say "this plan covers X"); just describe X.
 
-#### Milestones
-Order matters — execution order. Each is a meaningful chunk a dev could pick up. Aim for 3-6 milestones. Skip "set up project" / "deploy" boilerplate unless they are genuinely part of the work. For each: `title` (short imperative, e.g. "Wire client brief to public endpoint") and `description` (1-3 sentences of what's done and how it's verified).
+#### Milestones — write to `milestones.json`
+Ordered JSON array of `{ title, description }`. Order matters — execution order. Each is a meaningful chunk a dev could pick up. Aim for 3-6 milestones. Skip "set up project" / "deploy" boilerplate unless they are genuinely part of the work. For each: `title` (short imperative, e.g. "Wire client brief to public endpoint") and `description` (1-3 sentences of what's done and how it's verified).
 
-#### Client brief
+#### Client brief — write to `brief.md`
 Markdown, in the chosen `language`. Audience: a non-technical stakeholder. The brief should:
 - State the goal in their terms (no internal jargon).
 - Walk through what will change in the product, grouped sensibly (not necessarily milestone-by-milestone).
@@ -56,7 +58,15 @@ If processing revision feedback: lead with the changes you made in response to t
 
 ### 4. Submit
 
-Call `plan-set-scoped(planid, summary, milestones, clientBrief, language)`. The server enforces that status is `ready` or `revision_required`; if not, surface the error.
+```
+opflow plan set-scoped <id> \
+    --summary @summary.md \
+    --milestones @milestones.json \
+    --clientbrief @brief.md \
+    --language <code>
+```
+
+The server enforces that status is `ready` or `revision_required`; if not, the CLI surfaces the HTTP error.
 
 ### 5. Confirm
 
@@ -70,7 +80,7 @@ If the user already had a share link out in the wild and you re-ran scoping, men
 
 ## Rules
 
-- **One atomic write.** Always call `plan-set-scoped` once, with all four fields complete. Don't try to stream/iterate.
-- **No scope mutations here.** Attaching/detaching requirements or issues is the chat's job (or done via override on a non-draft plan). Don't call `requirement-attach` from this skill.
+- **One atomic write.** Always call `opflow plan set-scoped` once, with all four fields complete. Don't try to stream/iterate.
+- **No scope mutations here.** Attaching/detaching requirements or issues is the chat's job (or done via override on a non-draft plan). Don't call `opflow requirement attach` from this skill.
 - **Honour the language.** When in revision-required mode, re-use the existing language unless the user explicitly asks to switch.
-- **Don't invent requirements.** Work from what `plan-get-for-scoping` returns. If a requirement seems missing, ask the user — don't silently add it.
+- **Don't invent requirements.** Work from what `opflow plan get-for-scoping` returns. If a requirement seems missing, ask the user — don't silently add it.
